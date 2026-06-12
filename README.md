@@ -30,11 +30,9 @@ Start-Sleep -Seconds 10
 
 ### 3. Ejecutar el script de setup
 
-```powershell
-.\setup-all-databases-final.ps1
-```
+python setup-database.py
 
-**¡Listo!** Las bases de datos estarán listas en menos de 5 minutos.
+**¡Listo!** Las bases de datos estarán listas.
 
 ---
 
@@ -43,7 +41,7 @@ Start-Sleep -Seconds 10
 ```
 shalom-dev-db/
 ├── docker-compose.yml          # Configuración de MySQL
-├── setup-all-databases-final.ps1  # Script de importación automática
+├── setup-database.py           # Script de importación automática
 ├── dumps/                       # Dumps de bases de datos
 │   ├── *.sql.gz                # Dumps comprimidos
 │   └── *.sql                   # Dumps sin comprimir
@@ -117,26 +115,6 @@ El proyecto está optimizado para rendimiento:
 
 **Resultado:** Búsquedas **92% más rápidas** ⚡
 
-
----
-
-## 🔄 Actualizar Datos
-
-Si alguien actualiza los dumps en el repositorio:
-
-```powershell
-# Actualizar repositorio
-git pull
-
-# Re-importar datos (elimina todo)
-.\import-all.ps1
-
-# O sin eliminar datos
-docker compose down
-docker compose up -d
-Start-Sleep -Seconds 10
-.\import-all.ps1
-```
 
 ---
 
