@@ -1,0 +1,26 @@
+services:
+  mysql-dev:
+    image: mysql:8.0.42
+    container_name: mysql-dev-shalom
+    restart: unless-stopped
+    command: --default-authentication-plugin=mysql_native_password --innodb_buffer_pool_size=512M
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_USER: docker
+      MYSQL_PASSWORD: "4X+9zXs3k6%1e"
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_dev_data:/var/lib/mysql
+      - ./init:/docker-entrypoint-initdb.d
+      - ./dumps:/dumps
+    networks:
+      - shalom-dev-net
+
+volumes:
+  mysql_dev_data:
+
+networks:
+  shalom-dev-net:
+    name: shalom-dev-net
+    driver: bridge
