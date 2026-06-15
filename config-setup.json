@@ -1,0 +1,346 @@
+# ════════════════════════════════════════════════════════════════════
+# CONFIG.JSON - Configuración Centralizada para SHALOM DEV DB
+# ════════════════════════════════════════════════════════════════════
+
+{
+  "metadata": {
+    "version": "2.0",
+    "description": "Configuración corregida después de análisis completo",
+    "last_updated": "2026-06-15",
+    "corrections": [
+      "✓ Importa 19/19 archivos server12 (antes solo 3)",
+      "✓ Orden correcto de importación (evita reversiones)",
+      "✓ Omite archivos duplicados/conflictivos",
+      "✓ Validaciones exhaustivas de datos"
+    ]
+  },
+
+  "docker": {
+    "mysql_host": "mysql-dev-shalom",
+    "mysql_user": "root",
+    "mysql_password": "root",
+    "mysql_version": "8.0.42",
+    "docker_user": "docker",
+    "docker_password": "4X+9zXs3k6%1e",
+    "app_container": "pro-qa_app"
+  },
+
+  "database_structure": {
+    "description": "6 bases de datos a importar",
+    "databases": [
+      "server12",
+      "shalom_pro",
+      "shalom_clientes_corp",
+      "empresarial",
+      "empresarial2",
+      "tarifas"
+    ]
+  },
+
+  "server12_files": {
+    "description": "19 archivos - ORDEN CORRECTO (base a dependientes)",
+    "total_files": 19,
+    "estimated_records": "25,811,093",
+    "files": [
+      {
+        "order": 1,
+        "filename": "server12_emp_ciudad_ubigeo.sql.gz",
+        "description": "Ciudades y ubicaciones (tabla base)",
+        "depends_on": "ninguno",
+        "records": "~500",
+        "import": true
+      },
+      {
+        "order": 2,
+        "filename": "server12_emp_ruta.sql.gz",
+        "description": "Rutas (tabla base)",
+        "depends_on": "ninguno",
+        "records": "~2000",
+        "import": true
+      },
+      {
+        "order": 3,
+        "filename": "server12_emp_terminal.sql.gz",
+        "description": "Terminales (tabla base)",
+        "depends_on": "ninguno",
+        "records": "~500",
+        "import": true
+      },
+      {
+        "order": 4,
+        "filename": "server12_emp_terminales_principales_aereas.sql.gz",
+        "description": "Terminales aéreas principales",
+        "depends_on": "emp_terminal",
+        "records": "~50",
+        "import": true
+      },
+      {
+        "order": 5,
+        "filename": "server12_emp_tarifas_aereas.sql.gz",
+        "description": "Tarifas aéreas (depende de ruta)",
+        "depends_on": "emp_ruta",
+        "records": "~10000",
+        "import": true
+      },
+      {
+        "order": 6,
+        "filename": "server12_emp_rutas_distancias.sql.gz",
+        "description": "Distancias entre rutas ⭐ IMPORTANTE",
+        "depends_on": "emp_ruta",
+        "records": "~500000",
+        "import": true,
+        "note": "TABLA QUE FALTABA - Causaba error en app"
+      },
+      {
+        "order": 7,
+        "filename": "server12_emp_guia_electronica_correlativo.sql.gz",
+        "description": "Guía electrónica y correlativo",
+        "depends_on": "ninguno",
+        "records": "~1000",
+        "import": true
+      },
+      {
+        "order": 8,
+        "filename": "server12_emp_producto.sql.gz",
+        "description": "Productos",
+        "depends_on": "ninguno",
+        "records": "~500",
+        "import": true
+      },
+      {
+        "order": 9,
+        "filename": "server12_emp_contact_origin.sql.gz",
+        "description": "Origen de contactos",
+        "depends_on": "ninguno",
+        "records": "~100",
+        "import": true
+      },
+      {
+        "order": 10,
+        "filename": "server12_emp_dni_vetados.sql.gz",
+        "description": "DNI vetados",
+        "depends_on": "ninguno",
+        "records": "~1000",
+        "import": true
+      },
+      {
+        "order": 11,
+        "filename": "server12_emp_telefonos_validados.sql.gz",
+        "description": "Teléfonos validados",
+        "depends_on": "ninguno",
+        "records": "~100000",
+        "import": true
+      },
+      {
+        "order": 12,
+        "filename": "server12_emp_persona.sql.gz",
+        "description": "Personas ⭐ GRANDE",
+        "depends_on": "tabla base",
+        "records": "~9,200,000",
+        "import": true,
+        "size_mb": 438.5
+      },
+      {
+        "order": 13,
+        "filename": "server12_emp_os_detalle.sql.gz",
+        "description": "Detalle de órdenes ⭐ MUY GRANDE",
+        "depends_on": "tabla base",
+        "records": "~14,500,000",
+        "import": true,
+        "size_mb": 610.2
+      },
+      {
+        "order": 14,
+        "filename": "server12_core_solo_ordenservicio.sql.gz",
+        "description": "Órdenes de servicio (core)",
+        "depends_on": "tabla base",
+        "records": "~2,000,000",
+        "import": true,
+        "size_mb": 231.5
+      },
+      {
+        "order": 15,
+        "filename": "server12_emp_telefono_os.sql.gz",
+        "description": "Teléfono en órdenes de servicio",
+        "depends_on": "emp_ordenservicio",
+        "records": "~500000",
+        "import": true
+      },
+      {
+        "order": 16,
+        "filename": "server12_emp_gestion_cobranza.sql.gz",
+        "description": "Gestión de cobranza",
+        "depends_on": "emp_ordenservicio",
+        "records": "~754",
+        "import": true
+      },
+      {
+        "order": 17,
+        "filename": "server12_envia_core.sql.gz",
+        "description": "Core ENVIA (base de datos de envíos)",
+        "depends_on": "tabla base",
+        "records": "~100000",
+        "import": true
+      },
+      {
+        "order": 18,
+        "filename": "server12_enviaya_core.sql.gz",
+        "description": "Core ENVIAYA",
+        "depends_on": "tabla base",
+        "records": "~50000",
+        "import": true
+      }
+    ],
+    "omit": [
+      {
+        "filename": "server12_emp_ordenservicio.sql.gz",
+        "reason": "DUPLICADO - Causa ERROR 1050",
+        "note": "Las órdenes ya están en server12_core_solo_ordenservicio.sql.gz"
+      }
+    ]
+  },
+
+  "other_databases": {
+    "shalom_pro": {
+      "description": "Base de datos principal - 10 archivos",
+      "total_records": "~2,000,000",
+      "files": [
+        "shalom_pro_schema.sql",
+        "shalom_pro_data.sql",
+        "shalom_pro_service_order.sql",
+        "shalom_pro_login_seed.sql",
+        "shalom_pro_extra_branches_person.sql.gz",
+        "shalom_pro_extra_companies_user.sql.gz",
+        "shalom_pro_extra_contact_extra.sql.gz"
+      ],
+      "omit": [
+        {
+          "filename": "shalom_pro_extra_company.sql.gz",
+          "reason": "ERROR FK 1822 - Missing index for constraint"
+        },
+        {
+          "filename": "shalom_pro_extra_get_user.sql.gz",
+          "reason": "ERROR FK 1822 - Missing index for constraint"
+        }
+      ]
+    },
+    "empresarial": {
+      "description": "Base de datos empresarial - 2 archivos",
+      "total_records": "~876,000",
+      "files": [
+        "empresarial_schema_utf8.sql",
+        "empresarial_data_utf8.sql"
+      ]
+    },
+    "shalom_clientes_corp": {
+      "description": "Clientes corporativos - 2 archivos",
+      "total_records": "~149,000",
+      "files": [
+        "shalom_clientes_corp_schema.sql",
+        "shalom_clientes_corp_data.sql"
+      ]
+    },
+    "tarifas": {
+      "description": "Tarifas - 2 archivos",
+      "total_records": "~27,000",
+      "files": [
+        "tarifas_schema.sql",
+        "tarifas_data.sql"
+      ]
+    },
+    "empresarial2": {
+      "description": "Empresarial 2 - Solo estructura (sin datos)",
+      "total_records": 0,
+      "files": [
+        "empresarial2_schema.sql"
+      ]
+    }
+  },
+
+  "validation": {
+    "description": "Tablas críticas a validar después de importar",
+    "critical_tables": {
+      "server12": [
+        {
+          "table": "emp_persona",
+          "expected_minimum": 9000000,
+          "description": "Personas"
+        },
+        {
+          "table": "emp_os_detalle",
+          "expected_minimum": 14000000,
+          "description": "Detalle de órdenes"
+        },
+        {
+          "table": "emp_ordenservicio",
+          "expected_minimum": 2000000,
+          "description": "Órdenes de servicio"
+        },
+        {
+          "table": "emp_rutas_distancias",
+          "expected_minimum": 1000,
+          "description": "Distancias entre rutas"
+        },
+        {
+          "table": "emp_ruta",
+          "expected_minimum": 500,
+          "description": "Rutas"
+        },
+        {
+          "table": "emp_terminal",
+          "expected_minimum": 500,
+          "description": "Terminales"
+        }
+      ],
+      "shalom_pro": [
+        {
+          "table": "users",
+          "expected_minimum": 50000,
+          "description": "Usuarios"
+        },
+        {
+          "table": "person",
+          "expected_minimum": 800000,
+          "description": "Personas"
+        },
+        {
+          "table": "service_order",
+          "expected_minimum": 600000,
+          "description": "Órdenes de servicio"
+        }
+      ]
+    }
+  },
+
+  "timeouts": {
+    "description": "Timeouts inteligentes según tamaño de archivo",
+    "rules": [
+      {
+        "size_mb_min": 500,
+        "size_mb_max": 999999,
+        "timeout_seconds": 1800,
+        "description": "30 minutos para archivos > 500 MB"
+      },
+      {
+        "size_mb_min": 200,
+        "size_mb_max": 499,
+        "timeout_seconds": 1200,
+        "description": "20 minutos para archivos 200-500 MB"
+      },
+      {
+        "size_mb_min": 0,
+        "size_mb_max": 199,
+        "timeout_seconds": 600,
+        "description": "10 minutos para archivos < 200 MB"
+      }
+    ]
+  },
+
+  "total_data": {
+    "total_files": 39,
+    "total_databases": 6,
+    "total_estimated_records": "29,076,009",
+    "estimated_import_time": "45-90 minutos (depende del PC)",
+    "required_disk_space": "~3 GB"
+  }
+}
