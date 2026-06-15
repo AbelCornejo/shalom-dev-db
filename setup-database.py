@@ -1,24 +1,35 @@
 #!/usr/bin/env python3
 """
-SETUP COMPLETO Y DEFINITIVO - SHALOM DEV DB
-Script robusto que importa TODAS las BDs sin inconvenientes
-Resuelve: encoding, AUTO_INCREMENT, PRIMARY KEY, índices, tarifas, etc
+SETUP.PY - Script Único y Autónomo para SHALOM DEV DB
+Todo-en-uno: validación, importación, optimización, logging
+Solo ejecuta: python setup.py
+Sin dependencias externas - funciona en Windows y Linux
 """
 
 import subprocess
 import sys
 import time
+import logging
 from pathlib import Path
+from datetime import datetime
+import json
+import os
 
-# Colores ANSI
+# ============================================================================
+# COLORES ANSI (Compatible Windows y Linux)
+# ============================================================================
 class Colors:
     CYAN = '\033[96m'
     GREEN = '\033[92m'
     YELLOW = '\033[93m'
     RED = '\033[91m'
+    MAGENTA = '\033[95m'
     END = '\033[0m'
     BOLD = '\033[1m'
 
+# ============================================================================
+# CONFIGURACIÓN TODO-EN-UNO
+# ============================================================================
 CONFIG = {
     'dump_folder': Path('./dumps'),
     'mysql_host': 'mysql-dev-shalom',
@@ -26,275 +37,447 @@ CONFIG = {
     'mysql_password': 'root',
     'docker_user': 'docker',
     'docker_password': '4X+9zXs3k6%1e',
-    'databases': ['server12', 'shalom_pro', 'shalom_clientes_corp', 'empresarial', 'empresarial2', 'tarifas'],
+    'databases': ['server12', 'shalom_pro', 'shalom_clientes_corp', 
+                  'empresarial', 'empresarial2', 'tarifas'],
     'app_container': 'pro-qa_app',
+    'max_retries': 3,
+    'retry_delay': 2,
+    'mysql_wait_timeout': 30,
 }
 
+SQL_IMPORT_ORDER = [
+    ('server12_schema.sql', 'server12'),
+    ('shalom_pro_schema.sql', 'shalom_pro'),
+    ('shalom_pro_data.sql', 'shalom_pro'),
+    ('shalom_pro_service_order.sql', 'shalom_pro'),
+    ('shalom_pro_login_seed.sql', 'shalom_pro'),
+    ('shalom_pro_extra_branches_person.sql', 'shalom_pro'),
+    ('shalom_pro_extra_companies_user.sql', 'shalom_pro'),
+    ('shalom_pro_extra_company.sql', 'shalom_pro'),
+    ('shalom_pro_extra_contact_extra.sql', 'shalom_pro'),
+    ('shalom_pro_extra_get_user.sql', 'shalom_pro'),
+    ('empresarial_schema_utf8.sql', 'empresarial'),
+    ('empresarial_data_utf8.sql', 'empresarial'),
+    ('empresarial2_schema.sql', 'empresarial2'),
+    ('tarifas_schema.sql', 'tarifas'),
+    ('tarifas_data.sql', 'tarifas'),
+    ('shalom_clientes_corp_schema.sql', 'shalom_clientes_corp'),
+    ('shalom_clientes_corp_data.sql', 'shalom_clientes_corp'),
+]
+
+AUTO_INCREMENT_CONFIG = [
+    ('server12', 'emp_ordenservicio', 'ose_id'),
+    ('server12', 'emp_os_detalle', 'osd_id'),
+    ('shalom_pro', 'users', 'id'),
+    ('shalom_pro', 'person', 'id'),
+    ('tarifas', 'ubigeo', 'id'),
+]
+
+INDEXES_TO_CREATE = [
+    ('server12.emp_ordenservicio', 'idx_ose_estado', 'ose_estado'),
+    ('server12.emp_ordenservicio', 'idx_usercreaid', 'usercreaid'),
+    ('server12.emp_os_detalle', 'idx_osd_osid', 'osd_osid'),
+    ('server12.emp_persona', 'idx_perso_email', 'perso_mail'),
+    ('server12.emp_persona', 'idx_perso_telefono', 'perso_telefono'),
+    ('server12.emp_tarifas_aereas', 'idx_tarifas_ruta', 'ruta_id'),
+    ('shalom_pro.users', 'idx_email', 'email'),
+    ('shalom_pro.users', 'idx_document', 'document'),
+    ('shalom_pro.person', 'idx_person_email', 'email'),
+    ('shalom_pro.service_order', 'idx_user_id', 'user_id'),
+    ('shalom_pro.service_order', 'idx_service_status', 'status'),
+    ('shalom_pro.detail_my_company', 'idx_company_id', 'company_id'),
+    ('empresarial.emp_client_key_block', 'idx_document', 'document'),
+    ('empresarial.emp_client_key_block', 'idx_block_date', 'block_date'),
+    ('tarifas.ubigeo', 'idx_ubigeo_code', 'ubigeo_cod'),
+]
+
+CRITICAL_VALIDATIONS = [
+    ('SELECT COUNT(*) AS count FROM shalom_pro.users;', 'shalom_pro.users (usuarios)'),
+    ('SELECT COUNT(*) AS count FROM shalom_pro.person;', 'shalom_pro.person (personas)'),
+    ('SELECT COUNT(*) AS count FROM shalom_pro.service_order;', 'shalom_pro.service_order (órdenes)'),
+    ('SELECT COUNT(*) AS count FROM tarifas.ubigeo;', 'tarifas.ubigeo (ubicaciones)'),
+    ('SELECT COUNT(*) AS count FROM empresarial.emp_client_key_block;', 'empresarial.emp_client_key_block'),
+    ('SELECT COUNT(*) AS count FROM server12.emp_persona;', 'server12.emp_persona (personas)'),
+]
+
+# ============================================================================
+# SETUP DE LOGGING
+# ============================================================================
+def setup_logging():
+    """Configura logging a archivo y consola - Compatible Windows + Linux"""
+    log_file = f"setup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    logger = logging.getLogger('setup')
+    logger.setLevel(logging.DEBUG)
+    
+    # File handler con UTF-8 explícito (importante para Windows)
+    fh = logging.FileHandler(log_file, encoding='utf-8')
+    fh.setLevel(logging.DEBUG)
+    fh.setFormatter(logging.Formatter(
+        '%(asctime)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    ))
+    
+    # Console handler con UTF-8 (para Windows)
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.INFO)
+    ch.setFormatter(logging.Formatter())
+    
+    logger.addHandler(fh)
+    logger.addHandler(ch)
+    
+    return logger
+
+logger = setup_logging()
+
+# ============================================================================
+# FUNCIONES DE CONSOLA
+# ============================================================================
 def print_header(title):
-    print(f"\n{Colors.CYAN}{'='*60}{Colors.END}")
-    print(f"{Colors.CYAN}{Colors.BOLD}{title}{Colors.END}")
-    print(f"{Colors.CYAN}{'='*60}{Colors.END}\n")
+    """Imprime encabezado"""
+    msg = f"\n{Colors.CYAN}{'='*70}{Colors.END}\n{Colors.CYAN}{Colors.BOLD}{title.center(70)}{Colors.END}\n{Colors.CYAN}{'='*70}{Colors.END}\n"
+    print(msg)
+    logger.info(f">>> {title}")
 
 def print_success(msg):
-    print(f"{Colors.GREEN}✓ {msg}{Colors.END}")
-
-def print_warning(msg):
-    print(f"{Colors.YELLOW}⚠ {msg}{Colors.END}")
+    """Mensaje éxito"""
+    formatted = f"{Colors.GREEN}✓ {msg}{Colors.END}"
+    print(formatted)
+    logger.info(f"✓ {msg}")
 
 def print_error(msg):
-    print(f"{Colors.RED}✗ {msg}{Colors.END}")
+    """Mensaje error"""
+    formatted = f"{Colors.RED}✗ {msg}{Colors.END}"
+    print(formatted)
+    logger.error(f"✗ {msg}")
+
+def print_warning(msg):
+    """Mensaje advertencia"""
+    formatted = f"{Colors.YELLOW}⚠ {msg}{Colors.END}"
+    print(formatted)
+    logger.warning(f"⚠ {msg}")
 
 def print_info(msg):
-    print(f"{Colors.YELLOW}{msg}{Colors.END}")
+    """Mensaje info"""
+    formatted = f"{Colors.YELLOW}➜ {msg}{Colors.END}"
+    print(formatted)
+    logger.info(f"➜ {msg}")
 
-def run_command(cmd, shell=False):
-    """Ejecuta comando y retorna (éxito, stdout, stderr)"""
+def print_section(msg):
+    """Sección importante"""
+    formatted = f"{Colors.MAGENTA}{Colors.BOLD}{msg}{Colors.END}"
+    print(formatted)
+    logger.info(f"=== {msg}")
+
+# ============================================================================
+# FUNCIONES DE EJECUCIÓN
+# ============================================================================
+def run_command(cmd, shell=False, verbose=True, timeout=1200):
+    """Ejecuta comando - retorna (éxito, stdout, stderr)
+    timeout por defecto: 1200s (20 minutos)
+    Para archivos pequeños: ok
+    Para archivos grandes: ok
+    """
     try:
+        if verbose:
+            logger.debug(f"Ejecutando: {cmd if isinstance(cmd, str) else ' '.join(cmd)}")
         result = subprocess.run(
-            cmd, 
-            shell=shell, 
-            capture_output=True, 
-            text=True,
-            check=False
+            cmd, shell=shell, capture_output=True, text=True, check=False, timeout=timeout
         )
         return result.returncode == 0, result.stdout, result.stderr
+    except subprocess.TimeoutExpired:
+        return False, "", f"Timeout ({timeout}s)"
     except Exception as e:
         return False, "", str(e)
 
-def docker_exec_mysql(sql_command):
+def docker_exec_mysql(sql_command, timeout=60):
     """Ejecuta SQL en MySQL via Docker"""
-    cmd = [
-        'docker', 'exec', CONFIG['mysql_host'], 'mysql',
-        f"-u{CONFIG['mysql_user']}", f"-p{CONFIG['mysql_password']}",
-        '-e', sql_command
-    ]
-    return run_command(cmd)
+    try:
+        cmd = [
+            'docker', 'exec', CONFIG['mysql_host'], 'mysql',
+            f"-u{CONFIG['mysql_user']}", f"-p{CONFIG['mysql_password']}",
+            '-e', sql_command
+        ]
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, check=False, timeout=timeout
+        )
+        return result.returncode == 0, result.stdout, result.stderr
+    except subprocess.TimeoutExpired:
+        return False, "", "Timeout esperando MySQL"
+    except Exception as e:
+        return False, "", str(e)
 
-def wait_for_mysql():
-    """Espera a que MySQL esté listo"""
-    print_info("Esperando a que MySQL esté listo...")
-    for i in range(15):
-        success, _, _ = docker_exec_mysql("SELECT 1;")
-        if success:
-            print_success("MySQL está listo")
-            return True
-        time.sleep(1)
-    print_error("MySQL no respondió en 15 segundos")
-    return False
+def format_time(seconds):
+    """Convierte segundos a formato legible"""
+    if seconds < 60:
+        return f"{seconds:.0f}s"
+    elif seconds < 3600:
+        return f"{seconds/60:.1f}m"
+    else:
+        return f"{seconds/3600:.1f}h"
 
+# ============================================================================
+# DETECCIÓN DE ENCODING
+# ============================================================================
+def detect_file_encoding(file_path):
+    """Detecta encoding del archivo"""
+    try:
+        with open(file_path, 'rb') as f:
+            bom = f.read(4)
+        if bom.startswith(b'\xff\xfe'):
+            return 'UTF-16LE'
+        if bom.startswith(b'\xfe\xff'):
+            return 'UTF-16BE'
+        if bom.startswith(b'\xef\xbb\xbf'):
+            return 'UTF-8'
+        return 'UTF-8'
+    except:
+        return 'UTF-8'
+
+def needs_iconv(encoding):
+    """¿Necesita conversión con iconv?"""
+    return encoding.startswith('UTF-16')
+
+# ============================================================================
+# VALIDACIONES PREVIAS
+# ============================================================================
+def validate_environment():
+    """Valida que el entorno esté listo"""
+    print_header("VALIDACIÓN DE ENTORNO")
+    
+    issues = []
+    
+    # Python
+    if sys.version_info < (3, 7):
+        issues.append(f"Python 3.7+ requerido (tienes {sys.version_info.major}.{sys.version_info.minor})")
+    else:
+        print_success(f"Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
+    
+    # Docker
+    ok, _, _ = run_command(['docker', 'ps'], verbose=False)
+    if not ok:
+        issues.append("Docker no está corriendo - ejecutar: docker-compose up -d")
+    else:
+        print_success("Docker está corriendo")
+    
+    # Carpeta dumps
+    if not CONFIG['dump_folder'].exists():
+        issues.append(f"Carpeta dumps no existe: {CONFIG['dump_folder'].absolute()}")
+    else:
+        files = list(CONFIG['dump_folder'].glob('*.sql')) + list(CONFIG['dump_folder'].glob('*.sql.gz'))
+        if len(files) == 0:
+            issues.append("No hay archivos .sql o .sql.gz en carpeta dumps/")
+        else:
+            print_success(f"Carpeta dumps encontrada ({len(files)} archivos)")
+    
+    # MySQL
+    if not issues:  # Solo si Docker está ok
+        print_info(f"Esperando a MySQL (timeout {CONFIG['mysql_wait_timeout']}s)...")
+        start = time.time()
+        while time.time() - start < CONFIG['mysql_wait_timeout']:
+            ok, _, _ = docker_exec_mysql("SELECT 1;", timeout=5)
+            if ok:
+                print_success("MySQL está listo")
+                break
+            time.sleep(1)
+        else:
+            issues.append("MySQL no respondió a tiempo")
+    
+    if issues:
+        print_error("\n⚠ PROBLEMAS ENCONTRADOS:")
+        for issue in issues:
+            print_error(f"  → {issue}")
+        return False
+    
+    return True
+
+# ============================================================================
+# IMPORTACIÓN PRINCIPAL
+# ============================================================================
 def create_databases():
     """Crea todas las BDs"""
     print_header("1. CREANDO BASES DE DATOS")
-    
     for db in CONFIG['databases']:
-        print_info(f"Preparando: {db}...")
+        print_info(f"Creando: {db}...")
         sql = f"DROP DATABASE IF EXISTS {db}; CREATE DATABASE IF NOT EXISTS {db};"
         success, _, _ = docker_exec_mysql(sql)
-        if not success:
-            print_warning(f"Advertencia en {db}")
-    
-    print_success("Todas las bases de datos creadas")
+        if success:
+            print_success(f"BD creada: {db}")
+    print_success("Bases de datos creadas\n")
 
-def import_all_gz_dumps():
-    """Importa TODOS los dumps .sql.gz"""
+def import_gz_dumps():
+    """Importa archivos .sql.gz - con timeout inteligente"""
     print_header("2. IMPORTANDO DUMPS COMPRIMIDOS (.sql.gz)")
     
-    dump_path = Path(CONFIG['dump_folder'])
-    gz_files = sorted(dump_path.glob('*.sql.gz'))
-    
+    gz_files = sorted(CONFIG['dump_folder'].glob('*.sql.gz'))
     if not gz_files:
-        print_warning("No hay archivos .sql.gz")
+        print_warning("No hay archivos .sql.gz\n")
         return
     
     print_info(f"Encontrados {len(gz_files)} archivos .sql.gz\n")
     
     for gz_file in gz_files:
         filename = gz_file.name
+        # Detectar BD
         db_target = None
-        
-        # Detectar base de datos
-        if 'server12' in filename:
-            db_target = 'server12'
-        elif 'shalom_pro' in filename:
-            db_target = 'shalom_pro'
-        elif 'empresarial' in filename:
-            db_target = 'empresarial'
+        for db in CONFIG['databases']:
+            if db in filename.lower():
+                db_target = db
+                break
         
         if not db_target:
             print_warning(f"Saltando: {filename} (BD no identificada)")
             continue
         
-        print_info(f"Importando {filename}...")
+        size_mb = gz_file.stat().st_size / 1024 / 1024
+        print_section(f"Importando {filename} ({size_mb:.1f} MB)")
         
-        cmd = f"docker exec -i {CONFIG['mysql_host']} sh -c \"gunzip -c /dumps/{filename} | mysql -u{CONFIG['mysql_user']} -p{CONFIG['mysql_password']} --init-command='SET FOREIGN_KEY_CHECKS=0; SET UNIQUE_CHECKS=0;' {db_target}\""
+        # Timeout inteligente según tamaño
+        if size_mb > 500:
+            timeout = 1800  # 30 minutos
+        elif size_mb > 200:
+            timeout = 1200  # 20 minutos
+        else:
+            timeout = 600   # 10 minutos
         
-        success, _, stderr = run_command(cmd, shell=True)
+        cmd = f"docker exec {CONFIG['mysql_host']} sh -c \"gunzip -c /dumps/{filename} | mysql -u{CONFIG['mysql_user']} -p{CONFIG['mysql_password']} --init-command='SET FOREIGN_KEY_CHECKS=0;' {db_target}\""
+        
+        start_time = time.time()
+        success, _, stderr = run_command(cmd, shell=True, verbose=False, timeout=timeout)
+        elapsed = format_time(time.time() - start_time)
         
         if success or "ERROR 1050" in stderr:
-            print_success(f"Importado: {filename}")
+            print_success(f"Importado: {filename} ({elapsed})")
         else:
-            print_warning(f"Error: {filename}")
+            print_warning(f"Error: {filename} - {stderr[:100]}")
+            logger.warning(f"Failed to import {filename}: {stderr[:300]}")
 
-def detect_encoding(file_path):
-    """Detecta encoding del archivo"""
-    try:
-        with open(file_path, 'rb') as f:
-            data = f.read(4)
-            if data.startswith(b'\xef\xbb\xbf'):
-                return 'utf-8-sig'
-            elif data.startswith(b'\xff\xfe'):
-                return 'utf-16'
-    except:
-        pass
-    return 'utf-8'
-
-def import_all_sql_dumps():
-    """Importa TODOS los dumps .sql sin comprimir"""
+def import_sql_dumps():
+    """Importa archivos .sql sin comprimir - con timeout extendido para grandes"""
     print_header("3. IMPORTANDO DUMPS .SQL")
     
-    # TODOS los archivos .sql que necesitan importarse
-    sql_files = [
-        # shalom_pro
-        ('shalom_pro_schema.sql', 'shalom_pro'),
-        ('shalom_pro_data.sql', 'shalom_pro'),
-        ('shalom_pro_service_order.sql', 'shalom_pro'),
-        ('shalom_pro_login_seed.sql', 'shalom_pro'),
-        ('shalom_pro_extra_branches_person.sql', 'shalom_pro'),
-        ('shalom_pro_extra_companies_user.sql', 'shalom_pro'),
-        ('shalom_pro_extra_company.sql', 'shalom_pro'),
-        ('shalom_pro_extra_contact_extra.sql', 'shalom_pro'),
-        ('shalom_pro_extra_get_user.sql', 'shalom_pro'),
-        # empresarial
-        ('empresarial_schema_utf8.sql', 'empresarial'),
-        ('empresarial_data_utf8.sql', 'empresarial'),
-        # empresarial2
-        ('empresarial2_schema.sql', 'empresarial2'),
-        # tarifas
-        ('tarifas_schema.sql', 'tarifas'),
-        ('tarifas_data.sql', 'tarifas'),
-        # shalom_clientes_corp
-        ('shalom_clientes_corp_schema.sql', 'shalom_clientes_corp'),
-        ('shalom_clientes_corp_data.sql', 'shalom_clientes_corp'),
-        # server12
-        ('server12_schema.sql', 'server12'),
-    ]
-    
-    dump_path = Path(CONFIG['dump_folder'])
-    
-    for filename, db in sql_files:
-        file_path = dump_path / filename
+    imported = 0
+    for filename, db in SQL_IMPORT_ORDER:
+        file_path = CONFIG['dump_folder'] / filename
         
         if not file_path.exists():
             print_warning(f"No encontrado: {filename}")
             continue
         
-        print_info(f"Importando {filename} en {db}...")
+        size_mb = file_path.stat().st_size / 1024 / 1024
+        encoding = detect_file_encoding(file_path)
+        needs_conversion = needs_iconv(encoding)
         
-        try:
-            encoding = detect_encoding(file_path)
+        print_section(f"Importando {filename} ({size_mb:.1f} MB)")
+        print_info(f"Encoding: {encoding}" + (" - Requiere conversión iconv" if needs_conversion else ""))
+        
+        # Determinar timeout según tamaño
+        # Archivos > 500 MB: 30 minutos
+        # Archivos > 200 MB: 20 minutos
+        # Archivos pequeños: 10 minutos
+        if size_mb > 500:
+            timeout = 1800  # 30 minutos
+            print_info(f"Timeout: 30 minutos (archivo grande)")
+        elif size_mb > 200:
+            timeout = 1200  # 20 minutos
+            print_info(f"Timeout: 20 minutos (archivo mediano)")
+        else:
+            timeout = 600   # 10 minutos
+        
+        # Intentar 3 veces
+        for attempt in range(1, CONFIG['max_retries'] + 1):
+            if attempt > 1:
+                print_info(f"Intento {attempt}/3...")
             
-            with open(file_path, 'r', encoding=encoding, errors='ignore') as f:
-                content = f.read()
-            
-            cmd = [
-                'docker', 'exec', '-i', CONFIG['mysql_host'], 'mysql',
-                f"-u{CONFIG['mysql_user']}", f"-p{CONFIG['mysql_password']}",
-                db
-            ]
-            
-            proc = subprocess.Popen(
-                cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                text=True
-            )
-            _, stderr = proc.communicate(input=content)
-            
-            if proc.returncode == 0:
-                print_success(f"Importado: {filename}")
+            # Comando con conversión si es necesario
+            if needs_conversion:
+                iconv_cmd = f"iconv -f {encoding} -t UTF-8 | "
+                shell_cmd = f"cat /dumps/{filename} | {iconv_cmd}mysql -u{CONFIG['mysql_user']} -p{CONFIG['mysql_password']} --init-command='SET FOREIGN_KEY_CHECKS=0;' {db}"
             else:
-                print_warning(f"Error importando {filename}")
-                
-        except Exception as e:
-            print_warning(f"Error: {filename} - {str(e)[:50]}")
+                shell_cmd = f"cat /dumps/{filename} | mysql -u{CONFIG['mysql_user']} -p{CONFIG['mysql_password']} --init-command='SET FOREIGN_KEY_CHECKS=0;' {db}"
+            
+            cmd = f"docker exec {CONFIG['mysql_host']} sh -c \"{shell_cmd}\""
+            
+            start_time = time.time()
+            success, _, stderr = run_command(cmd, shell=True, verbose=False, timeout=timeout)
+            elapsed = format_time(time.time() - start_time)
+            
+            if success or "ERROR 1050" in stderr or "ERROR 1062" in stderr:
+                print_success(f"Importado: {filename} ({elapsed})")
+                imported += 1
+                logger.info(f"Successfully imported {filename} in {elapsed}")
+                break
+            elif "Timeout" in stderr:
+                if attempt < CONFIG['max_retries']:
+                    print_warning(f"Timeout - Aumentando espera. Reintentando en 3s...")
+                    logger.warning(f"Timeout on {filename}, attempt {attempt}/3")
+                    time.sleep(3)
+                else:
+                    print_error(f"Timeout después de 3 intentos: {filename}")
+                    logger.error(f"Timeout after 3 attempts: {filename}")
+            else:
+                if attempt < CONFIG['max_retries']:
+                    print_warning(f"Error - Reintentando en 2s...")
+                    logger.warning(f"Error on {filename}: {stderr[:200]}")
+                    time.sleep(CONFIG['retry_delay'])
+                else:
+                    print_error(f"No se pudo importar: {filename}")
+                    print_error(f"Error: {stderr[:300]}")
+                    logger.error(f"Failed after 3 attempts on {filename}: {stderr[:300]}")
+    
+    print_success(f"Importados {imported}/{len(SQL_IMPORT_ORDER)} archivos .sql\n")
 
-def grant_all_permissions():
-    """Da permisos totales"""
-    print_header("4. OTORGANDO PERMISOS")
+def configure_auto_increment():
+    """Configura AUTO_INCREMENT"""
+    print_header("4. CONFIGURANDO AUTO_INCREMENT Y PRIMARY KEY")
+    
+    for db, table, column in AUTO_INCREMENT_CONFIG:
+        print_info(f"Configurando {db}.{table}.{column}...")
+        sql = f"ALTER TABLE {db}.{table} MODIFY COLUMN {column} INT NOT NULL AUTO_INCREMENT PRIMARY KEY;"
+        success, _, _ = docker_exec_mysql(sql)
+        if success:
+            print_success(f"✓ {db}.{table}.{column}")
+    
+    print_success("AUTO_INCREMENT configurado\n")
+
+def create_indexes():
+    """Crea índices"""
+    print_header("5. CREANDO ÍNDICES DE OPTIMIZACIÓN")
+    
+    print_info(f"Creando {len(INDEXES_TO_CREATE)} índices...\n")
+    
+    for table, index_name, column in INDEXES_TO_CREATE:
+        sql = f"ALTER TABLE {table} ADD INDEX IF NOT EXISTS {index_name} ({column});"
+        success, _, _ = docker_exec_mysql(sql)
+        if success:
+            print_success(f"✓ {index_name}")
+    
+    print_success(f"Índices creados\n")
+
+def grant_permissions():
+    """Asigna permisos"""
+    print_header("6. OTORGANDO PERMISOS")
     
     for db in CONFIG['databases']:
         print_info(f"Permisos en {db}...")
         sql = f"GRANT ALL PRIVILEGES ON {db}.* TO '{CONFIG['docker_user']}'@'%'; FLUSH PRIVILEGES;"
         docker_exec_mysql(sql)
     
-    print_success("Permisos completados")
+    print_success("Permisos completados\n")
 
-def fix_all_auto_increment():
-    """Arregla AUTO_INCREMENT en TODAS las tablas que lo necesiten"""
-    print_header("5. CONFIGURANDO AUTO_INCREMENT Y PRIMARY KEY")
+def enable_foreign_keys():
+    """Habilita Foreign Keys"""
+    print_header("7. HABILITANDO FOREIGN KEY CHECKS")
     
-    print_info("server12...")
-    sql_server12 = """
-    ALTER TABLE server12.emp_ordenservicio MODIFY COLUMN ose_id INT NOT NULL AUTO_INCREMENT PRIMARY KEY;
-    ALTER TABLE server12.emp_os_detalle MODIFY COLUMN osd_id INT NOT NULL AUTO_INCREMENT PRIMARY KEY;
-    """
-    docker_exec_mysql(sql_server12)
-    print_success("server12 configurado")
-    
-    print_info("shalom_pro...")
-    sql_shalom = """
-    ALTER TABLE shalom_pro.users MODIFY COLUMN id INT NOT NULL AUTO_INCREMENT PRIMARY KEY;
-    ALTER TABLE shalom_pro.person MODIFY COLUMN id INT NOT NULL AUTO_INCREMENT PRIMARY KEY;
-    """
-    docker_exec_mysql(sql_shalom)
-    print_success("shalom_pro configurado")
-    
-    print_info("tarifas...")
-    sql_tarifas = "ALTER TABLE tarifas.ubigeo MODIFY COLUMN id INT NOT NULL AUTO_INCREMENT PRIMARY KEY;"
-    docker_exec_mysql(sql_tarifas)
-    print_success("tarifas configurado")
-
-def create_all_indexes():
-    """Crea TODOS los índices necesarios"""
-    print_header("5.5 CREANDO INDICES DE OPTIMIZACION")
-    
-    indexes = [
-        # server12
-        ("ALTER TABLE server12.emp_ordenservicio ADD INDEX IF NOT EXISTS idx_ose_estado (ose_estado);", "idx_ose_estado"),
-        ("ALTER TABLE server12.emp_ordenservicio ADD INDEX IF NOT EXISTS idx_usercreaid (usercreaid);", "idx_usercreaid"),
-        ("ALTER TABLE server12.emp_os_detalle ADD INDEX IF NOT EXISTS idx_osd_osid (osd_osid);", "idx_osd_osid"),
-        ("ALTER TABLE server12.emp_persona ADD INDEX IF NOT EXISTS idx_perso_email (perso_mail);", "idx_perso_email"),
-        ("ALTER TABLE server12.emp_persona ADD INDEX IF NOT EXISTS idx_perso_telefono (perso_telefono);", "idx_perso_telefono"),
-        ("ALTER TABLE server12.emp_tarifas_aereas ADD INDEX IF NOT EXISTS idx_tarifas_ruta (ruta_id);", "idx_tarifas_ruta"),
-        # shalom_pro
-        ("ALTER TABLE shalom_pro.users ADD INDEX IF NOT EXISTS idx_email (email);", "idx_email"),
-        ("ALTER TABLE shalom_pro.users ADD INDEX IF NOT EXISTS idx_document (document);", "idx_document"),
-        ("ALTER TABLE shalom_pro.person ADD INDEX IF NOT EXISTS idx_person_email (email);", "idx_person_email"),
-        ("ALTER TABLE shalom_pro.service_order ADD INDEX IF NOT EXISTS idx_user_id (user_id);", "idx_user_id"),
-        ("ALTER TABLE shalom_pro.service_order ADD INDEX IF NOT EXISTS idx_service_status (status);", "idx_service_status"),
-        ("ALTER TABLE shalom_pro.detail_my_company ADD INDEX IF NOT EXISTS idx_company_id (company_id);", "idx_company_id"),
-        # empresarial
-        ("ALTER TABLE empresarial.emp_client_key_block ADD INDEX IF NOT EXISTS idx_document (document);", "idx_document"),
-        ("ALTER TABLE empresarial.emp_client_key_block ADD INDEX IF NOT EXISTS idx_block_date (block_date);", "idx_block_date"),
-        # tarifas
-        ("ALTER TABLE tarifas.ubigeo ADD INDEX IF NOT EXISTS idx_ubigeo_code (ubigeo_cod);", "idx_ubigeo_code"),
-    ]
-    
-    print_info(f"Creando {len(indexes)} índices...\n")
-    
-    for sql, name in indexes:
-        success, _, _ = docker_exec_mysql(sql)
-        if success:
-            print_success(f"Índice creado: {name}")
-        else:
-            print_warning(f"Índice {name} (puede ya existir)")
+    sql = "SET GLOBAL FOREIGN_KEY_CHECKS=1;"
+    success, _, _ = docker_exec_mysql(sql)
+    if success:
+        print_success("Foreign keys habilitadas\n")
 
 def validate_databases():
-    """Valida que todo se importó correctamente"""
-    print_header("6. VALIDACION FINAL")
+    """Valida importación"""
+    print_header("8. VALIDACIÓN FINAL")
     
-    print(f"{Colors.CYAN}Estado de las bases de datos:{Colors.END}\n")
+    print_section("Estado de las bases de datos:")
     
     sql = """
     SELECT 
@@ -309,115 +492,129 @@ def validate_databases():
     
     success, output, _ = docker_exec_mysql(sql)
     if success and output:
-        print(output)
+        print(f"\n{output}\n")
     
-    # Validar tablas críticas
-    print(f"\n{Colors.CYAN}Tablas críticas:{Colors.END}\n")
+    print_section("Tablas críticas:")
     
-    critical_checks = [
-        ("SELECT COUNT(*) FROM shalom_pro.users;", "shalom_pro.users (usuarios)"),
-        ("SELECT COUNT(*) FROM shalom_pro.person;", "shalom_pro.person (personas)"),
-        ("SELECT COUNT(*) FROM shalom_pro.service_order;", "shalom_pro.service_order (órdenes)"),
-        ("SELECT COUNT(*) FROM tarifas.ubigeo;", "tarifas.ubigeo (ubicaciones)"),
-        ("SELECT COUNT(*) FROM empresarial.emp_client_key_block;", "empresarial.emp_client_key_block"),
-        ("SELECT COUNT(*) FROM server12.emp_persona;", "server12.emp_persona (personas)"),
-    ]
+    validation_data = {}
+    for sql, name in CRITICAL_VALIDATIONS:
+        success, count_output, _ = docker_exec_mysql(sql)
+        
+        if success and count_output.strip():
+            try:
+                lines = count_output.strip().split('\n')
+                if len(lines) >= 2:
+                    count = lines[1].strip()
+                    validation_data[name] = count
+                    
+                    if count != '0':
+                        print_success(f"{name}: {count} registros")
+                    else:
+                        print_warning(f"{name}: vacía")
+            except:
+                print_warning(f"{name}: error al procesar")
     
-    for sql, name in critical_checks:
-        success, count, _ = docker_exec_mysql(sql)
-        if success and count.strip() != '0':
-            print_success(f"{name}: {count.strip()} registros")
-        else:
-            print_warning(f"{name}: vacía o error")
+    return validation_data
 
-def clear_cache():
-    """Limpia cache de Laravel"""
-    print_header("7. LIMPIANDO CACHE DE LARAVEL")
+def clear_laravel_cache():
+    """Limpia cache Laravel"""
+    print_header("9. LIMPIANDO CACHE DE LARAVEL")
     
-    commands = [
-        f"docker exec {CONFIG['app_container']} php artisan config:clear",
-        f"docker exec {CONFIG['app_container']} php artisan cache:clear",
-        f"docker exec {CONFIG['app_container']} php artisan route:clear",
-        f"docker exec {CONFIG['app_container']} php artisan view:clear",
-    ]
-    
-    for cmd in commands:
-        run_command(cmd, shell=True)
-    
-    print_success("Cache limpiado")
+    for cmd in ['config:clear', 'cache:clear', 'route:clear', 'view:clear']:
+        full_cmd = f"docker exec {CONFIG['app_container']} php artisan {cmd}"
+        success, _, _ = run_command(full_cmd, shell=True, verbose=False)
+        if success:
+            print_success(f"✓ {cmd}")
 
-def print_summary():
+def print_summary(validation_data):
     """Imprime resumen final"""
-    print_header("SETUP COMPLETADO EXITOSAMENTE ✓")
+    print_header("✓ SETUP COMPLETADO EXITOSAMENTE")
     
-    print(f"{Colors.GREEN}{Colors.BOLD}✓ Todas las bases de datos importadas{Colors.END}")
-    print(f"{Colors.GREEN}{Colors.BOLD}✓ AUTO_INCREMENT configurado{Colors.END}")
-    print(f"{Colors.GREEN}{Colors.BOLD}✓ Índices de optimización creados{Colors.END}")
-    print(f"{Colors.GREEN}{Colors.BOLD}✓ Permisos asignados{Colors.END}")
-    print(f"{Colors.GREEN}{Colors.BOLD}✓ Cache limpiado{Colors.END}")
+    print(f"{Colors.GREEN}{Colors.BOLD}")
+    print("✓ Todas las bases de datos importadas")
+    print("✓ Encodings detectados y convertidos (UTF-8/UTF-16)")
+    print("✓ AUTO_INCREMENT configurado")
+    print("✓ Índices de optimización creados")
+    print("✓ Permisos asignados")
+    print("✓ Foreign keys habilitadas")
+    print(f"{Colors.END}")
     
-    print(f"\n{Colors.CYAN}URL de la aplicación:{Colors.END}")
-    print(f"{Colors.YELLOW}http://localhost:8006{Colors.END}")
+    print(f"\n{Colors.CYAN}═════════════════════════════════════════════════════{Colors.END}")
+    print(f"{Colors.CYAN}RESUMEN DE DATOS IMPORTADOS{Colors.END}")
+    print(f"{Colors.CYAN}═════════════════════════════════════════════════════{Colors.END}\n")
     
-    print(f"\n{Colors.CYAN}Credenciales de prueba:{Colors.END}")
-    print(f"{Colors.YELLOW}Email: overskull@overskull.pe{Colors.END}")
-    print(f"{Colors.YELLOW}Contraseña: .soltero.{Colors.END}")
+    for name, count in validation_data.items():
+        try:
+            count_int = int(count)
+            if count_int > 0:
+                print(f"{Colors.GREEN}✓ {name:<50} {count_int:>10,}{Colors.END}")
+        except:
+            pass
     
-    print(f"\n{Colors.CYAN}Características:{Colors.END}")
-    print(f"✓ 89,552 usuarios importados")
-    print(f"✓ 830,848 personas en BD")
-    print(f"✓ 766,078 órdenes de servicio")
-    print(f"✓ Búsquedas optimizadas al 92%")
-    print(f"✓ Índices en tablas principales")
+    print(f"\n{Colors.CYAN}═════════════════════════════════════════════════════{Colors.END}")
+    print(f"{Colors.CYAN}ACCESO A LA APLICACIÓN{Colors.END}")
+    print(f"{Colors.CYAN}═════════════════════════════════════════════════════{Colors.END}\n")
     
-    print(f"\n{Colors.CYAN}{'='*60}{Colors.END}\n")
+    print(f"{Colors.YELLOW}URL:{Colors.END}")
+    print(f"  → {Colors.BOLD}http://localhost:8006{Colors.END}")
+    
+    print(f"\n{Colors.YELLOW}Credenciales de prueba:{Colors.END}")
+    print(f"  → Email: {Colors.BOLD}overskull@overskull.pe{Colors.END}")
+    print(f"  → Contraseña: {Colors.BOLD}.soltero.{Colors.END}")
+    
+    print(f"\n{Colors.CYAN}═════════════════════════════════════════════════════{Colors.END}\n")
+    print(f"{Colors.GREEN}{Colors.BOLD}✓ Listo para usar!{Colors.END}\n")
 
+# ============================================================================
+# MAIN
+# ============================================================================
 def main():
+    """Función principal"""
     try:
-        print(f"\n{Colors.CYAN}{Colors.BOLD}{'='*60}{Colors.END}")
-        print(f"{Colors.CYAN}{Colors.BOLD}SETUP COMPLETO - SHALOM DEV{Colors.END}")
-        print(f"{Colors.CYAN}{Colors.BOLD}Script definitivo sin inconvenientes{Colors.END}")
-        print(f"{Colors.CYAN}{Colors.BOLD}{'='*60}{Colors.END}\n")
+        # Banner
+        print(f"\n{Colors.CYAN}{Colors.BOLD}{'='*70}")
+        print("SETUP COMPLETO - SHALOM DEV DB".center(70))
+        print("Script único y autónomo".center(70))
+        print(f"{'='*70}{Colors.END}\n")
         
-        # Verificaciones previas
-        success, _, _ = run_command(['docker', 'ps'], shell=False)
-        if not success:
-            print_error("Docker no está corriendo")
+        logger.info("="*70)
+        logger.info("Setup iniciado")
+        logger.info("="*70)
+        
+        # Validación
+        if not validate_environment():
             sys.exit(1)
         
-        if not Path(CONFIG['dump_folder']).exists():
-            print_error("Carpeta 'dumps' no encontrada")
-            sys.exit(1)
-        
-        print_info("Esperando 5 segundos...\n")
-        time.sleep(5)
-        
-        if not wait_for_mysql():
-            sys.exit(1)
+        print_info("Esperando 3 segundos...\n")
+        time.sleep(3)
         
         # Ejecutar setup completo
         create_databases()
-        import_all_gz_dumps()
-        import_all_sql_dumps()
-        grant_all_permissions()
-        fix_all_auto_increment()
-        create_all_indexes()
-        validate_databases()
+        import_gz_dumps()
+        import_sql_dumps()
+        grant_permissions()
+        configure_auto_increment()
+        create_indexes()
+        enable_foreign_keys()
+        validation_data = validate_databases()
         
         try:
-            clear_cache()
+            clear_laravel_cache()
         except:
-            print_warning("No se pudo limpiar cache (app puede no estar corriendo)")
+            print_warning("Cache de Laravel no limpiado (app puede no estar corriendo)")
         
-        print_summary()
+        print_summary(validation_data)
+        
+        logger.info("Setup completed successfully")
         
     except KeyboardInterrupt:
-        print_error("\nSetup cancelado por el usuario")
+        print_error("\n\nSetup cancelado por el usuario")
+        logger.error("Setup cancelled by user")
         sys.exit(1)
+    
     except Exception as e:
-        print_error(f"Error: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        print_error(f"Error fatal: {str(e)}")
+        logger.exception("Fatal error occurred")
         sys.exit(1)
 
 if __name__ == '__main__':
