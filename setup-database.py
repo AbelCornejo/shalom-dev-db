@@ -57,7 +57,7 @@ UTF8_FILES = [
         #('server12_enviaya_core.sql.gz', 'ENVIAYA'),
     ]),
     ('shalom_pro', [
-        ('shalom_pro.sql.gz', 'Shalom PRO completo'),
+        #('shalom_pro.sql.gz', 'Shalom PRO completo'),
         ('shalom_pro_extra_branches_person.sql.gz', 'Extra ramas'),
         ('shalom_pro_extra_companies_user.sql.gz', 'Extra empresas'),
         ('shalom_pro_extra_contact_extra.sql.gz', 'Extra contactos'),
@@ -77,15 +77,16 @@ UTF16LE_FILES = [
         ('shalom_pro_schema.sql', 'Esquema'),
         ('shalom_pro_data.sql', 'Datos'),
         ('shalom_pro_login_seed.sql', 'Login'),
+        ('shalom_pro_service_order.sql', 'Service order'),
     ]),
     ('shalom_clientes_corp', [
         ('shalom_clientes_corp_schema.sql', 'Esquema'),
         ('shalom_clientes_corp_data.sql', 'Datos'),
     ]),
-    ('empresarial', [
-        ('empresarial_schema.sql', 'Esquema'),
-        ('empresarial_data.sql', 'Datos'),
-    ]),
+    #('empresarial', [
+    #    ('empresarial_schema.sql', 'Esquema'),
+    #    ('empresarial_data.sql', 'Datos'),
+    #]),
     ('empresarial2', [
         ('empresarial2_schema.sql', 'Esquema'),
     ]),
@@ -190,7 +191,7 @@ def create_databases():
 
 def import_utf8_files():
     """Importar 27 archivos UTF-8 sin conversión"""
-    print_header("2A. IMPORTANDO UTF-8 DIRECTO (27 archivos)")
+    print_header("2A. IMPORTANDO UTF-8 DIRECTO")
     
     total = sum(len(files) for _, files in UTF8_FILES)
     current = 0
@@ -215,14 +216,36 @@ def import_utf8_files():
             start = time.time()
             
             if is_gz:
-                cmd = f'docker exec {CONFIG["mysql_host"]} bash -c "gunzip -c /dumps/{filename} | mysql --user={CONFIG["mysql_user"]} --password={CONFIG["mysql_password"]} --init-command=\\"SET FOREIGN_KEY_CHECKS=0;\\\" {db}"'
-            else:
-                cmd = f'docker exec {CONFIG["mysql_host"]} bash -c "mysql --user={CONFIG["mysql_user"]} --password={CONFIG["mysql_password"]} --init-command=\\"SET FOREIGN_KEY_CHECKS=0;\\\" {db} < /dumps/{filename}"'
-            
+                if filename in [
+                    'server12_emp_os_detalle.sql.gz',
+                    'server12_emp_ordenservicio.sql.gz',
+                ]:
+                    cmd = (
+                        f'docker exec {CONFIG["mysql_host"]} bash -c '
+                        f'"set -o pipefail; '
+                        f'(gunzip -c /dumps/{filename}; printf "\\n;\\nCOMMIT;\\n") | '
+                        f'MYSQL_PWD={CONFIG["mysql_password"]} mysql --force '
+                        f'--user={CONFIG["mysql_user"]} '
+                        f'--max_allowed_packet=1G '
+                        f'--init-command=\\"SET FOREIGN_KEY_CHECKS=0;\\" '
+                        f'{db}"'
+                    )
+                else:
+                    cmd = (
+                        f'docker exec {CONFIG["mysql_host"]} bash -c '
+                        f'"set -o pipefail; '
+                        f'gunzip -c /dumps/{filename} | '
+                        f'MYSQL_PWD={CONFIG["mysql_password"]} mysql --force '
+                        f'--user={CONFIG["mysql_user"]} '
+                        f'--max_allowed_packet=1G '
+                        f'--init-command=\\"SET FOREIGN_KEY_CHECKS=0;\\" '
+                        f'{db}"'
+                    )
+
             success, _, stderr = run_command(cmd, timeout=timeout)
             elapsed = format_time(time.time() - start)
             
-            if success or "ERROR" not in stderr:
+            if success:
                 print_success(f"✓ Importado en {elapsed}")
             else:
                 print_error(f"✗ Error importando {filename} en {db}")
@@ -235,7 +258,7 @@ def import_utf8_files():
 
 def import_utf16le_files():
     """Importar 12 archivos UTF-16LE con conversión"""
-    print_header("2B. IMPORTANDO UTF-16LE CON CONVERSIÓN (12 archivos)")
+    print_header("2B. IMPORTANDO UTF-16LE CON CONVERSIÓN")
     
     total = sum(len(files) for _, files in UTF16LE_FILES)
     current = 0
@@ -258,12 +281,21 @@ def import_utf16le_files():
             start = time.time()
             
             # Convertir UTF-16LE → UTF-8 + Importar
-            cmd = f'docker exec {CONFIG["mysql_host"]} bash -c "iconv -f UTF-16LE -t UTF-8 /dumps/{filename} | mysql --user={CONFIG["mysql_user"]} --password={CONFIG["mysql_password"]} --init-command=\\"SET FOREIGN_KEY_CHECKS=0;\\\" {db}"'
+            cmd = (
+                f'docker exec {CONFIG["mysql_host"]} bash -c '
+                f'"set -o pipefail; '
+                f'iconv -f UTF-16LE -t UTF-8 /dumps/{filename} | '
+                f'MYSQL_PWD={CONFIG["mysql_password"]} mysql --force '
+                f'--user={CONFIG["mysql_user"]} '
+                f'--max_allowed_packet=1G '
+                f'--init-command=\\"SET FOREIGN_KEY_CHECKS=0;\\" '
+                f'{db}"'
+            )
             
             success, _, stderr = run_command(cmd, timeout=timeout)
             elapsed = format_time(time.time() - start)
             
-            if success or "ERROR" not in stderr:
+            if success:
                 print_success(f"✓ Importado en {elapsed}")
             else:
                 print_error(f"✗ Error importando {filename} en {db}")
@@ -278,10 +310,10 @@ def validate_tables():
     print_header("3. VALIDACIÓN DE TABLAS")
     
     validations = {
-        'server12': ['emp_persona', 'emp_os_detalle', 'emp_ruta'],
+        'server12': ['emp_persona', 'emp_os_detalle', 'emp_ruta', 'emp_ordenservicio'],
         'shalom_pro': ['users', 'person', 'service_order'],
         'empresarial': ['emp_client_key_block'],
-        'tarifas': ['ubigeo'],
+        'tarifas': ['tarifas', 'agencias', 'emp_tarifario_new'],
     }
     
     for db, tables in validations.items():
@@ -318,7 +350,7 @@ def main():
     try:
         print(f"\n{Colors.CYAN}{Colors.BOLD}{'='*80}")
         print("SETUP FINAL - 100% CORRECTO".center(80))
-        print("27 UTF-8 + 12 UTF-16LE".center(80))
+        print("DUMPS SELECCIONADOS UTF-8 + UTF-16LE".center(80))
         print(f"{'='*80}{Colors.END}\n")
         
         if not validate_environment():
@@ -326,8 +358,8 @@ def main():
         
         time.sleep(2)
         create_databases()
-        import_utf8_files()
         import_utf16le_files()
+        import_utf8_files()
         validate_tables()
         optimize_database()
         
