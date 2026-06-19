@@ -7,8 +7,6 @@
 https://drive.google.com/drive/folders/1iRkA5Szy1vaQXVD_bHcT-ajHApmw4qcT
 
 
-Este proyecto proporciona un entorno Docker completo con MySQL y todas las bases de datos necesarias para ejecutar los proyectos Shalom-PRO y relacionados en tu máquina local.
-
 ---
 
 ## 📋 Requisitos Previos
