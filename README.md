@@ -2,6 +2,11 @@
 
 **Base de datos centralizada dockerizada para todos los proyectos Shalom en desarrollo local.**
 
+**DRIVE**
+
+https://drive.google.com/drive/folders/1iRkA5Szy1vaQXVD_bHcT-ajHApmw4qcT
+
+
 Este proyecto proporciona un entorno Docker completo con MySQL y todas las bases de datos necesarias para ejecutar los proyectos Shalom-PRO y relacionados en tu máquina local.
 
 ---
@@ -12,7 +17,7 @@ Este proyecto proporciona un entorno Docker completo con MySQL y todas las bases
 
 ---
 
-## 🚀 Quick Start (3 pasos)
+## 🚀 Quick Start 
 
 ### 1. Clonar el proyecto
 
@@ -21,31 +26,40 @@ git clone <tu-repositorio-url>
 cd shalom-dev-db
 ```
 
-### 2. Levantar la base de datos
+### 2. Crear la carpeta "snapshots"
 
-```bash
+Al crear la carpeta snapshots, copias los archivos del comprimido del link del drive (2 archivos)
+
+
+### 3. Crear un volumen vacio
+
+docker volume create shalom-dev-db_mysql_dev_data
+
+### 4. Restauracion del snapshot
+
+
+Restaurar el snapshot dentro del volumen:
+
+docker run --rm `
+  -v shalom-dev-db_mysql_dev_data:/volume `
+  -v "${PWD}\snapshots:/backup" `
+  alpine sh -c "cd /volume && tar -xzf /backup/dev-db-core-20260618-mysql8.tar.gz"
+
+
+### 5. Levantar el contenedor de la BD
+
 docker compose up -d
-Start-Sleep -Seconds 10
-```
 
-### 3. Ejecutar el script de setup
 
-python setup-database.py
-
-**¡Listo!** Las bases de datos estarán listas.
-
----
 
 ## 📁 Estructura del Proyecto
 
 ```
 shalom-dev-db/
 ├── docker-compose.yml          # Configuración de MySQL
-├── setup-database.py           # Script de importación automática
-├── dumps/                       # Dumps de bases de datos
-│   ├── *.sql.gz                # Dumps comprimidos
-│   └── *.sql                   # Dumps sin comprimir
-├── init/                        # Scripts de inicialización (opcional)
+├── snapshots/                   # Snapshots de bases de datos
+│   ├── *.tar.gz                # Snapshots comprimidos
+│   └── *.txt                   
 └── README.md                    # Este archivo
 ```
 
@@ -64,20 +78,6 @@ shalom-dev-db/
 
 ---
 
-## 🔧 Qué Hace el Script
-
-El script `import-all.ps1` automatiza completamente:
-
-1. ✅ Elimina bases de datos existentes (limpia)
-2. ✅ Crea bases de datos nuevas
-3. ✅ Importa dumps comprimidos (.sql.gz)
-4. ✅ Importa dumps sin comprimir (.sql)
-5. ✅ Otorga permisos al usuario `docker`
-6. ✅ Configura campos AUTO_INCREMENT
-7. ✅ Crea índices para optimizar búsquedas
-8. ✅ Limpia caché de Laravel
-
----
 
 ## 📊 Credenciales MySQL
 
@@ -119,6 +119,6 @@ El proyecto está optimizado para rendimiento:
 ---
 
 
-**Última actualización:** 11 de Junio, 2026  
+**Última actualización:** 19 de Junio, 2026  
 **Versión:** 1.0  
 **Estado:** ✅ Producción
