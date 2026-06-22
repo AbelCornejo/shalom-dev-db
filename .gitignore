@@ -1,2 +1,8 @@
 snapshots/*
 !snapshots/.gitkeep
+
+*.sql.gz
+*.tar
+*.tar.gz
+*.dump
+*.bak
